@@ -1,0 +1,47 @@
+[package]
+name = "websocket"
+version = "0.1.0"
+edition = "2021"
+
+default-run = "websocket-server"
+
+[[bin]]
+name = "websocket-server"
+path = "src/server.rs"
+
+[[bin]]
+name = "websocket-client"
+path = "src/client_ws.rs"
+
+
+[[bin]]
+name = "http-client"
+path = "src/client_http.rs"
+
+
+[dependencies]
+actix-web = "3.3"
+actix = "0.10.0"
+actix-http = "2.1.0"
+actix-web-actors = "3"
+actix-codec = "0.3"
+awc = "2"
+
+#tokio = { version = "1", features = ["io-util", "sync"] }
+#actix-multipart = "0.3"
+actix-files = "0.5"
+futures = "0.3.1"
+sanitize-filename = "0.3"
+actix-service = "2.0"
+bytes = "0.5.3"
+env_logger = "0.9"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+json = "0.12"
+
+futures-util = "0.3"
+
+# for client ws 2
+futures-sink = { version = "0.3.7", default-features = false }
+#actix-rt = { version = "2.0.0", default-features = false }
+actix-rt = "1.1.1"
