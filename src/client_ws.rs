@@ -226,11 +226,13 @@ fn main() {
     Arbiter::spawn(async {
         // Connect to server
         //-----------------------------
-        let (response, framed):(ClientResponse,Framed<BoxedSocket, Codec>) = awc::ClientBuilder::new()
-            //.disable_timeout()
-            //.initial_connection_window_size(65540)
-            .finish()
-            .ws("ws://192.168.0.104:4011/ws/")
+       let webRequest:awc::ws::WebsocketsRequest = awc::ClientBuilder::new()
+        //.disable_timeout()
+        //.initial_connection_window_size(65540)
+        .finish()
+        .ws("ws://192.168.0.104:4011/ws/");
+
+        let (response, framed):(ClientResponse,Framed<BoxedSocket, Codec>) = webRequest
             //.max_frame_size(65540)
             //.server_mode()
             .connect()
