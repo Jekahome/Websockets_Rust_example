@@ -1,11 +1,7 @@
 use actix_web::client::Client;
 use actix_web::http::header;
-use actix_web::error::Error;
 use actix_web::client::ClientRequest;
 use actix_web::client::ClientBuilder;
-//use bytes::{Bytes, BytesMut};
-use actix_web::web::Bytes;
-use futures_util::stream;
 use std::time::{Duration, Instant};
 
 
@@ -80,7 +76,7 @@ async fn client_get_easy() {
     let send_client:awc::SendClientRequest = request.send_body(buff);
     
     let response = send_client.await; 
-    response.and_then(|response| { 
+    response.and_then(|_response| { 
        // println!("Response: {:#?}", response);
         Ok(())
     });

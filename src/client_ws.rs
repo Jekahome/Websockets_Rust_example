@@ -17,11 +17,12 @@ use awc::ClientResponse;
 use actix_http::ws::Item;
 
 //use awc::Client;
-use actix_web::client::Client;
+//use actix_web::client::Client;
  
 use bytes::Bytes;
 use futures::stream::{SplitSink, StreamExt,SplitStream};
 use std::time::{Duration, Instant};
+use std::convert::TryFrom;
 
 /// Как часто отправляются эхо-запросы сердцебиения
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(400);
@@ -38,7 +39,10 @@ impl actix::io::WriteHandler<WsProtocolError> for MyClient {
     fn error(&mut self, err: WsProtocolError, ctx: &mut Self::Context) -> Running {
         eprintln!("{:?}",err);
        // Io(Os { code: 32, kind: BrokenPipe, message: "Broken pipe" })
-       
+       // https://cachelogica.com/en/os-error-code-32-broken-pipe/
+       /*
+            Чтобы недопустить отправки сообщения в незавершенный канал, следует дождаться от сервера обратной команды !
+       */
        Running::Stop
     }
 }
@@ -111,15 +115,37 @@ impl StreamHandler<Result<Frame, WsProtocolError>> for MyClient {
                 },
                 Ok(Frame::Pong(_)) => {
                    // println!("Client:Type msg Pong");
-                   // self.duration_heartbeat = Instant::now();
+                    self.duration_heartbeat = Instant::now();
                 },
                 Ok(Frame::Text(text)) => {
-                    println!("Client:Type msg Text: {:?}", text);
+                   // println!("Client:Type msg Text: {:?}", text);
                     self.duration_heartbeat = Instant::now();
                 },
                 Ok(Frame::Binary(bin)) => {
-                    println!("Client:Type msg Binary: {:?}", bin);
+                    //println!("Client:Type msg Binary: {:?}", bin);
                     self.duration_heartbeat = Instant::now();
+
+                    let size_byte = 4096;//65536-1 4096 16384 32768   (max=65536 2 byte/ 16bit)
+                    let buff = (0..=size_byte).map(|_|78).collect::<Vec<u8>>();
+
+                    if let Ok(n) = Number::try_from(bin){
+                        match n.0 {
+                            0 => {
+                               self.writer.write( Message::Continuation( Item::FirstBinary( Bytes::from_iter(buff.clone())))); 
+                            },
+                            e @ 1..=8 => {
+                                self.writer.write( Message::Continuation( Item::Continue( Bytes::from_iter(buff.clone())))); 
+                            },
+                            e @ 9  => {
+                                self.writer.write( Message::Continuation( Item::Last( Bytes::from_iter(buff.clone()))));
+                            },
+                           
+                            _ => {
+                                println!("Client:send end");
+                            }
+                        }
+                    }
+
                 },
                 Ok(Frame::Close(reason)) => {
                     println!("Client:Type msg Close");
@@ -140,6 +166,19 @@ impl StreamHandler<Result<Frame, WsProtocolError>> for MyClient {
 }
 
 
+#[derive(Debug)]
+struct Number(usize);
+
+impl TryFrom<Bytes> for Number {
+    type Error = String;
+    fn try_from(item: Bytes) -> Result<Self, Self::Error> {
+        let v = item.into_iter().collect::<Vec<u8>>();
+        match v.try_into() {
+            Ok(arr) =>{ Ok(Number(usize::from_be_bytes(arr))) },
+            Err(e) => { Err(format!("{:?}",e)) }
+        }
+    }
+}
 
 // ------------------------------------------------------------------------------------
 // Доплнительный источник команд
@@ -147,7 +186,11 @@ impl StreamHandler<Result<Frame, WsProtocolError>> for MyClient {
 // https://actix.rs/actix/actix/#derives
 #[derive(Message)]
 #[rtype(result = "()")]
-struct ClientCommand(Item);
+struct ClientCommand(Command);
+
+enum Command{
+    ReadySend(String)
+}
 
 /// Еще один обработчик из консоли
 /// Handle stdin commands
@@ -156,26 +199,20 @@ impl Handler<ClientCommand> for MyClient {
 
     fn handle(&mut self, msg: ClientCommand, _ctx: &mut Self::Context) -> Self::Result  {
         
-           match msg.0 {
-            Item::FirstBinary(data) => {
-                self.writer.write(Message::Continuation(Item::FirstBinary( data )));
+         match msg.0 {
+            Command::ReadySend(s) => {
+                self.writer.write(Message::Text(s));
             },
-            Item::Continue(data) => {
-                self.writer.write(Message::Continuation(Item::Continue( data )));
-            },
-            Item::Last(data) => {
-                self.writer.write(Message::Continuation(Item::Last( data  )));
-            },
-            _ => {
-                eprintln!("WTF");
-            }
-           }
-        
+            _ =>{}
+         }
+        // self.writer.write(Message::Text("ready load".to_string()));
         // self.writer.write(Message::Binary(Bytes::from_iter( msg.0 )));
     }
 }
 // ------------------------------------------------------------------------------------
-use std::hash::Hash;
+// Клиент через консоль сигнализирует серверу о начале загрузки, сервер посылает команду bin в обработчик MyClient
+// и начинается отправка пакетов, когда сервер отправит определенное количество полученных пакетов, клиент прекратит загрузку
+
 fn main() {
     // cargo run --bin websocket-client
 
@@ -190,12 +227,12 @@ fn main() {
         // Connect to server
         //-----------------------------
         let (response, framed):(ClientResponse,Framed<BoxedSocket, Codec>) = awc::ClientBuilder::new()
-            .disable_timeout()
-            .initial_connection_window_size(65540)
+            //.disable_timeout()
+            //.initial_connection_window_size(65540)
             .finish()
             .ws("ws://192.168.0.104:4011/ws/")
-            .max_frame_size(65540)
-            .server_mode()
+            //.max_frame_size(65540)
+            //.server_mode()
             .connect()
             .await
             .map_err(|e| {
@@ -247,24 +284,11 @@ fn main() {
                 println!("error");
                 return;
             }
-            if cmd == "123\n".to_string(){
-                println!(".");
-                let now = Instant::now();
-                let size_byte = 65535;//65536-1 4096 16384 32768   (max=65536 2 byte/ 16bit)
-                let buff = (0..=size_byte).map(|_|78).collect::<Vec<u8>>();
-                
-                    addr.do_send(ClientCommand( Item::FirstBinary( Bytes::from_iter(buff.clone()))));
-                    for i in (0..3000){
-                        addr.do_send(ClientCommand( Item::Continue( Bytes::from_iter(buff.clone()))));
-                    }
-                    addr.do_send(ClientCommand( Item::Last( Bytes::from_iter(buff.clone()))));
-
-                let sec = format!("sec={}",now.elapsed().as_secs());
-                println!("sec {}", sec);          
+            if cmd == "start\n".to_string(){ 
+                addr.do_send(ClientCommand( Command::ReadySend("ready send".to_string()) ));   
             }   
         });
 
     });
     sys.run().unwrap();
 }
-

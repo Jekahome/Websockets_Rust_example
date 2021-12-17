@@ -1,58 +1,19 @@
-/*
-#[macro_use]
-extern crate serde_json;
-
-extern crate failure;
-
-use actix_web::dev::ServiceResponse;
-use actix_web::middleware::errhandlers::{ErrorHandlerResponse, ErrorHandlers};
-use actix_files as fs;
-use actix_http::Response;
-
-use bytes::{Bytes, BytesMut};
-use json::JsonValue;
-use serde::{Deserialize, Serialize};
-
-use actix_http::ResponseBuilder;
-use failure::Fail;
-use chrono::prelude::*;
-
-use std::cell::Cell;
-use std::sync::Mutex;
-use std::borrow::BorrowMut;
-*/
-
-
-
 use actix_web::{
-    error, 
     middleware, 
     web, 
-  //  dev, 
-  //  guard,
     App, 
     Error, 
     HttpRequest, 
     HttpResponse, 
-    HttpServer,
-    http::header,
-    http::Method, 
-    http::StatusCode,
-    body::Body,
+    HttpServer, 
     Result
 };
 use actix_web::http::HeaderMap;
-use actix_web::http::HeaderValue;
 // макросы роутинга
 use actix_web::{get, post};
-//use actix_multipart::Multipart;
 use std::io::Write;
-use futures::{StreamExt, TryStreamExt};
-use std::fs::File;
+use futures::{TryStreamExt};
 use std::fs::OpenOptions;
-use std::path::Path;
-use std::io::Read;
-use futures::Stream;
 
 
 // HTTP example
@@ -121,16 +82,8 @@ use actix::{Context,Actor, StreamHandler};
 use actix_web_actors::ws;
 use actix::AsyncContext;
 use actix_http::ws::Item;
-
-////use tokio::io::BufReader;
-////use futures::io::BufReader;
 use std::io::BufReader;
-use std::io::BufRead;
-//use tokio::process::Command;
-use std::process::Command;
-use std::process::Stdio;
-use actix::Handler;
-
+use bytes::Bytes;
 use std::time::{Duration, Instant};
 
 /// Как часто отправляются эхо-запросы сердцебиения
@@ -229,8 +182,15 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWs {
             Ok(ws::Message::Text(text)) => {
                 println!("Server:Type msg Text: {:?}", text);
                 self.duration_heartbeat = Instant::now();
-                ctx.text(text)
-              //ctx.notify(CommandRunner(text.to_string()))
+                
+                // Go load
+                if text == "ready send".to_string() {
+                    unsafe{ bytes_len_payload=0;}
+                    ctx.binary( Bytes::from(  0_usize.to_be_bytes().to_vec() ) )
+                }
+
+                // ctx.text(text)
+                // ctx.notify(CommandRunner(text.to_string()))
             },
             Ok(ws::Message::Binary(bin)) => { unsafe{count_payload+=1;}
 
@@ -267,35 +227,40 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWs {
 
                 match item {
                     Item::FirstBinary(bin) => {
+                        
                         unsafe{
                             bytes_len_payload+=bin.len();
                             println!("count={} bin.len={} bytes_len={}",count_payload,bin.len(),bytes_len_payload);
                         }
-
                         f.write_all(&web::BytesMut::from_iter(bin)); 
+                        unsafe{ 
+                            //ctx.text( format!("{}",count_payload) )
+                            ctx.binary( Bytes::from(  count_payload.to_be_bytes().to_vec() ) )
+                        }
+
                     },
                     Item::Continue(bin) => {
                         unsafe{
                             bytes_len_payload+=bin.len();
                             println!("count={} bin.len={} bytes_len={}",count_payload,bin.len(),bytes_len_payload);
                         }
-
                         f.write_all(&web::BytesMut::from_iter(bin));
+                        unsafe{  ctx.binary( Bytes::from(  count_payload.to_be_bytes().to_vec() ) ) }
                     },
                     Item::Last(bin) => {
                         unsafe{
                             bytes_len_payload+=bin.len();
                             println!("count={} bin.len={} bytes_len={}",count_payload,bin.len(),bytes_len_payload);
+                            ctx.text( format!("{}",count_payload) )
                         }
-
                         f.write_all(&web::BytesMut::from_iter(bin));
+                        unsafe{  ctx.binary( Bytes::from(  count_payload.to_be_bytes().to_vec() ) ) }
                     },
                     _ => {
                         eprintln!("WTF");
+                        ctx.pong(&[0])
                     }
-                   }
-
-                ctx.pong(&[0])
+                   }   
             },
 
             Ok(ws::Message::Close(reason)) => {
@@ -391,9 +356,18 @@ async fn main() -> std::io::Result<()> {
 Различия между TCP сокетами и веб-сокетами
 https://coderoad.ru/16945345/%D0%A0%D0%B0%D0%B7%D0%BB%D0%B8%D1%87%D0%B8%D1%8F-%D0%BC%D0%B5%D0%B6%D0%B4%D1%83-TCP-%D1%81%D0%BE%D0%BA%D0%B5%D1%82%D0%B0%D0%BC%D0%B8-%D0%B8-%D0%B2%D0%B5%D0%B1-%D1%81%D0%BE%D0%BA%D0%B5%D1%82%D0%B0%D0%BC%D0%B8-%D0%B5%D1%89%D0%B5-%D1%80%D0%B0%D0%B7
 
-При отправке байтов из буфера с обычным сокетом TCP функция send возвращает количество байтов буфера, которые были отправлены. Если это неблокирующий сокет или неблокирующая отправка, то количество отправленных байтов может быть меньше размера буфера. Если это блокирующий сокет или блокирующая отправка, то возвращаемый номер будет соответствовать размеру буфера, но вызов может быть заблокирован. В случае WebSockets данные, передаваемые методу send, всегда отправляются либо целиком "message", либо вообще не отправляются. Кроме того, реализации browser WebSocket не блокируют вызов send.
+При отправке байтов из буфера с обычным сокетом TCP функция send возвращает количество байтов буфера, которые были отправлены. 
+Если это неблокирующий сокет или неблокирующая отправка, то количество отправленных байтов может быть меньше размера буфера. 
+Если это блокирующий сокет или блокирующая отправка, то возвращаемый номер будет соответствовать размеру буфера, но вызов может быть заблокирован. 
+В случае WebSockets данные, передаваемые методу send, всегда отправляются либо целиком "message", либо вообще не отправляются. 
+Кроме того, реализации browser WebSocket не блокируют вызов send.
 
-Но есть более важные различия на принимающей стороне вещей. Когда получатель выполняет recv (или read ) на сокете TCP, нет никакой гарантии, что количество возвращаемых байтов соответствует одной отправке (или записи) на стороне отправителя. Это может быть то же самое, это может быть меньше (или ноль), и это может быть даже больше (в этом случае принимаются байты от нескольких отправок/записей). В случае WebSockets получатель сообщения управляется событиями (обычно вы регистрируете процедуру обработки сообщений), и данные в событии всегда представляют собой все сообщение, отправленное другой стороной.
+Но есть более важные различия на принимающей стороне вещей. 
+Когда получатель выполняет recv (или read ) на сокете TCP, нет никакой гарантии, что количество возвращаемых байтов соответствует одной отправке (или записи) на стороне отправителя. 
+Это может быть то же самое, это может быть меньше (или ноль), и это может быть даже больше (в этом случае принимаются байты от нескольких отправок/записей). 
+В случае WebSockets получатель сообщения управляется событиями (обычно вы регистрируете процедуру обработки сообщений), и данные в событии всегда представляют собой все сообщение, отправленное другой стороной.
 
-Обратите внимание, что вы можете осуществлять связь на основе сообщений с помощью сокетов TCP, но вам нужен дополнительный слой/инкапсуляция, которая добавляет данные о границах кадрирования/сообщений в сообщения, чтобы исходные сообщения можно было повторно собрать из фрагментов. Фактически, WebSockets построен на обычных сокетах TCP и использует заголовки кадров, которые содержат размер каждого кадра и указывают, какие кадры являются частью сообщения. WebSocket API повторно собирает фрагменты данных TCP в фреймы, которые собираются в сообщения, прежде чем вызывать обработчик событий сообщения один раз для каждого сообщения.
+Обратите внимание, что вы можете осуществлять связь на основе сообщений с помощью сокетов TCP, но вам нужен дополнительный слой/инкапсуляция, которая добавляет данные о границах кадрирования/сообщений в сообщения, чтобы исходные сообщения можно было повторно собрать из фрагментов. 
+Фактически, WebSockets построен на обычных сокетах TCP и использует заголовки кадров, которые содержат размер каждого кадра и указывают, какие кадры являются частью сообщения. 
+WebSocket API повторно собирает фрагменты данных TCP в фреймы, которые собираются в сообщения, прежде чем вызывать обработчик событий сообщения один раз для каждого сообщения.
 */
