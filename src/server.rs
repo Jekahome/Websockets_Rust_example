@@ -22,8 +22,9 @@ use std::fs::OpenOptions;
 #[post("sound")]
 async fn save_file(mut payload: web::Payload,req: HttpRequest) -> Result<HttpResponse, Error>{
     let map:&HeaderMap = req.headers();
-    //let content_len:usize = map.get("Content-Length").unwrap().to_str().unwrap().parse::<usize>().unwrap();
-       
+    let content_len:usize = map.get("Content-Length").unwrap().to_str().unwrap().parse::<usize>().unwrap();
+    println!("HTTP Content-Length={}",content_len);
+
     let mut body = web::BytesMut::new();
     /*
         let mut count = 0;
@@ -126,7 +127,7 @@ impl MyWs {
         // 4. actix::dev::ToEnvelope
         //    - pack
 
-        ctx.run_interval(HEARTBEAT_INTERVAL, |act, ctx| {
+        /*ctx.run_interval(HEARTBEAT_INTERVAL, |act, ctx| {
             // проверка клиента сердцебиения
             if Instant::now().duration_since(act.duration_heartbeat) > CLIENT_TIMEOUT {
                 // heartbeat timed out
@@ -138,7 +139,7 @@ impl MyWs {
             }
 
             ctx.ping(b"msg server to client");
-        });
+        });*/
         
     }
 }
@@ -159,7 +160,7 @@ impl Actor for MyWs {
 
 static mut count_payload:usize = 0;
 static mut bytes_len_payload:usize = 0;
-
+ 
 /// Handler for ws::Message message
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWs {
     fn handle(
@@ -182,24 +183,27 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWs {
             Ok(ws::Message::Text(text)) => {
                 println!("Server:Type msg Text: {:?}", text);
                 self.duration_heartbeat = Instant::now();
-                
+               
                 // Go load
                 if text == "ready send".to_string() {
                     unsafe{ bytes_len_payload=0;}
-                    ctx.binary( Bytes::from(  0_usize.to_be_bytes().to_vec() ) )
+                    ctx.binary(Bytes::from_static(b"\0\0\0\0\0\0\0\0"))
+                    //ctx.binary(Bytes::from(0_usize.to_be_bytes().to_vec() ) )
                 }
+            
 
                 // ctx.text(text)
                 // ctx.notify(CommandRunner(text.to_string()))
             },
-            Ok(ws::Message::Binary(bin)) => { unsafe{count_payload+=1;}
+            Ok(ws::Message::Binary(bin)) => { 
+                unsafe{count_payload+=1;}
 
                 //println!("Server:Type msg Binary: {:?}", bin);
                 self.duration_heartbeat = Instant::now();
                 
                 unsafe{
                     bytes_len_payload+=bin.len();
-                    println!("count={} bin.len={} bytes_len={}",count_payload,bin.len(),bytes_len_payload);
+                    println!("Binary count={} bin.len={} bytes_len={}",count_payload,bin.len(),bytes_len_payload);
                 }
 
                 let mut f = OpenOptions::new()
@@ -210,7 +214,10 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWs {
 
                 f.write_all(&web::BytesMut::from_iter(bin));
                  
-                ctx.pong(&[0])
+                // unsafe{ctx.binary(Bytes::from(count_payload.to_be_bytes().to_vec()))}
+                ctx.binary(Bytes::from(0_usize.to_be_bytes().to_vec()))
+                //ctx.binary(Bytes::from_static(b"\0\0\0\0\0\0\0\0"))
+                //ctx.pong(&[0])
             },
             Ok(ws::Message::Continuation(item)) => { unsafe{count_payload+=1;}
               // frame size 65536 bytes => count=132 bin.len=65536 bytes_len=8650752
@@ -230,34 +237,54 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWs {
                         
                         unsafe{
                             bytes_len_payload+=bin.len();
-                            println!("count={} bin.len={} bytes_len={}",count_payload,bin.len(),bytes_len_payload);
+                            println!("Continuation FirstBinary count={} bin.len={} bytes_len={}",count_payload,bin.len(),bytes_len_payload);
                         }
+                        //println!("{:?}",bin.clone().iter().take(100));
                         f.write_all(&web::BytesMut::from_iter(bin)); 
+                        
                         unsafe{ 
                             //ctx.text( format!("{}",count_payload) )
-                            ctx.binary( Bytes::from(  count_payload.to_be_bytes().to_vec() ) )
+                            //ctx.binary(Bytes::from( count_payload.to_be_bytes().to_vec()))
+                            ctx.binary(Bytes::from_static(b"\0\0\0\0\0\0\0\0"))
                         }
 
                     },
                     Item::Continue(bin) => {
                         unsafe{
                             bytes_len_payload+=bin.len();
-                            println!("count={} bin.len={} bytes_len={}",count_payload,bin.len(),bytes_len_payload);
+                            println!("Continuation Continue count={} bin.len={} bytes_len={}",count_payload,bin.len(),bytes_len_payload);
                         }
                         f.write_all(&web::BytesMut::from_iter(bin));
-                        unsafe{  ctx.binary( Bytes::from(  count_payload.to_be_bytes().to_vec() ) ) }
+                        unsafe{ 
+                             // ctx.binary( Bytes::from( count_payload.to_be_bytes().to_vec())) 
+                            // ctx.binary(Bytes::from_static(b"\0\0\0\0\0\0\0\0"))
+                        }
                     },
                     Item::Last(bin) => {
                         unsafe{
                             bytes_len_payload+=bin.len();
-                            println!("count={} bin.len={} bytes_len={}",count_payload,bin.len(),bytes_len_payload);
+                            println!("Continuation Last count={} bin.len={} bytes_len={}",count_payload,bin.len(),bytes_len_payload);
                             ctx.text( format!("{}",count_payload) )
                         }
                         f.write_all(&web::BytesMut::from_iter(bin));
-                        unsafe{  ctx.binary( Bytes::from(  count_payload.to_be_bytes().to_vec() ) ) }
+                        unsafe{  
+                            // ctx.binary( Bytes::from(  count_payload.to_be_bytes().to_vec())) 
+                            ctx.binary(Bytes::from_static(b"\0\0\0\0\0\0\0\0"))
+                        }
+                    },
+                    Item::FirstText(text) => {
+                        unsafe{println!("Continuation FirstText count={} bin.len={} bytes_len={}",count_payload,text.len(),bytes_len_payload);}
+                         // Go load
+                        if text == "ready send".to_string() {
+                            println!("SERVER send to Client 'Go load'");
+                            unsafe{ bytes_len_payload=0;}
+                            //ctx.binary(Bytes::from_static(b"\0\0\0\0\0\0\0\0"))
+                            ctx.binary(Bytes::from(1_usize.to_be_bytes().to_vec() ) )
+                        }
+                      
                     },
                     _ => {
-                        eprintln!("WTF");
+                        eprintln!("WTF {:?}",item);
                         ctx.pong(&[0])
                     }
                    }   

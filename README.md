@@ -18,10 +18,12 @@
 
 [Actix doc](https://actix.rs/)
 
-[Examples](https://github.com/actix/actix-website/tree/master/examples/websockets) 
+[Actix Examples](https://github.com/actix/actix-website/tree/master/examples/websockets) 
 
-[Examples](https://learn.javascript.ru/websockets) 
+[Actix Examples](https://github.com/actix/examples/blob/master/websockets/chat/src/main.rs) 
 
-[Examples](https://github.com/actix/examples/blob/master/websockets/chat/src/main.rs) 
+[Javascript doc](https://learn.javascript.ru/websockets) 
 
-[Examples](https://github.com/antholeole/actix-sockets/blob/main/src/ws.rs) 
+[Javascript doc](https://learn.javascript.ru/websocket)
+
+[GitHub Examples](https://github.com/antholeole/actix-sockets/blob/main/src/ws.rs) 

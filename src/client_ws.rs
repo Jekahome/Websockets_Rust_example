@@ -198,7 +198,7 @@ impl Handler<ClientCommand> for MyClient {
     type Result = ();
 
     fn handle(&mut self, msg: ClientCommand, _ctx: &mut Self::Context) -> Self::Result  {
-        
+        // Запуск сценария обмена
          match msg.0 {
             Command::ReadySend(s) => {
                 self.writer.write(Message::Text(s));
