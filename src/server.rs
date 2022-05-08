@@ -8,7 +8,7 @@ use actix_web::{
     HttpServer, 
     Result
 };
-use actix_web::http::HeaderMap;
+use actix_http::header::map::HeaderMap;
 // макросы роутинга
 use actix_web::{get, post};
 use std::io::Write;
@@ -59,7 +59,7 @@ async fn save_file(mut payload: web::Payload,req: HttpRequest) -> Result<HttpRes
 
     let filepath = "./sound/increment.raw".to_string();
     let mut f = OpenOptions::new().append(true).create(true).open(filepath).unwrap();
-    f = web::block(move || f.write_all(&body).map(|_| f)).await?;
+    f = web::block(move || f.write_all(&body).map(|_| f).unwrap()).await?;
     Ok(HttpResponse::Ok().finish())
 /*
     match std::str::from_utf8(&body){
@@ -77,6 +77,17 @@ async fn save_file(mut payload: web::Payload,req: HttpRequest) -> Result<HttpRes
 
 // ==========================================================================================
 // Websockets Server example
+/*
+ctx: ws::WebsocketContext<Self> 
+
+ctx.binary(Bytes::from_static(b"\0\0\0\0\0\0\0\0"))
+ctx.binary(Bytes::from(0_usize.to_be_bytes().to_vec()))
+
+let text:String = String::from("");
+ctx.text(text)
+ctx.notify(CommandRunner(text))
+
+*/
 
 use actix::prelude::*;
 use actix::{Context,Actor, StreamHandler};
@@ -93,13 +104,13 @@ const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(500);
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(500);
 
 /// Define HTTP actor
-struct MyWs {
+struct ActorServer {
     /// Клиент должен отправлять пинг не реже одного раза в 10 секунд (CLIENT_TIMEOUT),
      /// иначе разрываем соединение.
      duration_heartbeat: Instant,
 }
 
-impl MyWs {
+impl ActorServer {
     fn new() -> Self {
         Self { duration_heartbeat: Instant::now() }
     }
@@ -107,7 +118,7 @@ impl MyWs {
     /// вспомогательный метод, который каждую секунду отправляет пинг клиенту.
     /// также этот метод проверяет сердцебиение от клиента
     fn heartbeat(&self, ctx: &mut <Self as Actor>::Context) {
-        // Context ctx сдесь это Struct actix_web_actors::ws::WebsocketContext<MyWs>
+        // Context ctx сдесь это Struct actix_web_actors::ws::WebsocketContext<ActorServer>
         // от Trait actix::Actor досталось:
         //    - create, start, start_default, start_in_arbiter, started, stopped, stopping
 
@@ -144,7 +155,7 @@ impl MyWs {
     }
 }
 
-impl Actor for MyWs {
+impl Actor for ActorServer {
     type Context = ws::WebsocketContext<Self>; // Struct actix_web_actors::ws::WebsocketContext
 
     /// Метод вызывается при запуске актера. Здесь мы запускаем процесс сердцебиения.
@@ -162,7 +173,7 @@ static mut count_payload:usize = 0;
 static mut bytes_len_payload:usize = 0;
  
 /// Handler for ws::Message message
-impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWs {
+impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ActorServer {
     fn handle(
         &mut self,
         msg: Result<ws::Message, ws::ProtocolError>,
@@ -187,13 +198,8 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWs {
                 // Go load
                 if text == "ready send".to_string() {
                     unsafe{ bytes_len_payload=0;}
-                    ctx.binary(Bytes::from_static(b"\0\0\0\0\0\0\0\0"))
-                    //ctx.binary(Bytes::from(0_usize.to_be_bytes().to_vec() ) )
+                    ctx.binary(Bytes::from_static(b"\0\0\0\0\0\0\0\0"));  
                 }
-            
-
-                // ctx.text(text)
-                // ctx.notify(CommandRunner(text.to_string()))
             },
             Ok(ws::Message::Binary(bin)) => { 
                 unsafe{count_payload+=1;}
@@ -213,11 +219,8 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWs {
                                 .unwrap();
 
                 f.write_all(&web::BytesMut::from_iter(bin));
-                 
-                // unsafe{ctx.binary(Bytes::from(count_payload.to_be_bytes().to_vec()))}
-                ctx.binary(Bytes::from(0_usize.to_be_bytes().to_vec()))
-                //ctx.binary(Bytes::from_static(b"\0\0\0\0\0\0\0\0"))
-                //ctx.pong(&[0])
+
+                ctx.binary(Bytes::from(0_usize.to_be_bytes().to_vec()));
             },
             Ok(ws::Message::Continuation(item)) => { unsafe{count_payload+=1;}
               // frame size 65536 bytes => count=132 bin.len=65536 bytes_len=8650752
@@ -242,12 +245,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWs {
                         //println!("{:?}",bin.clone().iter().take(100));
                         f.write_all(&web::BytesMut::from_iter(bin)); 
                         
-                        unsafe{ 
-                            //ctx.text( format!("{}",count_payload) )
-                            //ctx.binary(Bytes::from( count_payload.to_be_bytes().to_vec()))
-                            ctx.binary(Bytes::from_static(b"\0\0\0\0\0\0\0\0"))
-                        }
-
+                        ctx.binary(Bytes::from_static(b"\0\0\0\0\0\0\0\0"));  
                     },
                     Item::Continue(bin) => {
                         unsafe{
@@ -255,10 +253,8 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWs {
                             println!("Continuation Continue count={} bin.len={} bytes_len={}",count_payload,bin.len(),bytes_len_payload);
                         }
                         f.write_all(&web::BytesMut::from_iter(bin));
-                        unsafe{ 
-                             // ctx.binary( Bytes::from( count_payload.to_be_bytes().to_vec())) 
-                            // ctx.binary(Bytes::from_static(b"\0\0\0\0\0\0\0\0"))
-                        }
+
+                        ctx.binary(Bytes::from_static(b"\0\0\0\0\0\0\0\0"));
                     },
                     Item::Last(bin) => {
                         unsafe{
@@ -267,10 +263,8 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWs {
                             ctx.text( format!("{}",count_payload) )
                         }
                         f.write_all(&web::BytesMut::from_iter(bin));
-                        unsafe{  
-                            // ctx.binary( Bytes::from(  count_payload.to_be_bytes().to_vec())) 
-                            ctx.binary(Bytes::from_static(b"\0\0\0\0\0\0\0\0"))
-                        }
+                        
+                        ctx.binary(Bytes::from_static(b"\0\0\0\0\0\0\0\0"));
                     },
                     Item::FirstText(text) => {
                         unsafe{println!("Continuation FirstText count={} bin.len={} bytes_len={}",count_payload,text.len(),bytes_len_payload);}
@@ -281,7 +275,6 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWs {
                             //ctx.binary(Bytes::from_static(b"\0\0\0\0\0\0\0\0"))
                             ctx.binary(Bytes::from(1_usize.to_be_bytes().to_vec() ) )
                         }
-                      
                     },
                     _ => {
                         eprintln!("WTF {:?}",item);
@@ -302,7 +295,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWs {
 #[get("ws/")]
 async fn ws_index(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, Error> {
     // Когда устанавлмвается коннект с клиентом
-    let resp = ws::start(MyWs::new(), &req, stream);
+    let resp = ws::start(ActorServer::new(), &req, stream);
     println!("Response ws_index:{:?}", resp);
     /*
     Response ws_index:Ok(

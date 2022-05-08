@@ -1,7 +1,7 @@
-use actix_web::client::Client;
+use awc::Client;
 use actix_web::http::header;
-use actix_web::client::ClientRequest;
-use actix_web::client::ClientBuilder;
+use awc::ClientRequest;
+use awc::ClientBuilder;
 use std::time::{Duration, Instant};
 
 
@@ -30,7 +30,7 @@ async fn client_get_easy() {
 
  // or ClientBuilder -----------------------------
 
-    let client:Client = ClientBuilder::new()
+    let client:Client = awc::ClientBuilder::new()
         .timeout(Duration::new(5, 0))
         .header("User-Agent", "actix-web/3.0")
         .initial_connection_window_size(65535)
@@ -59,11 +59,11 @@ async fn client_get_easy() {
         .finish();
     
     let request:ClientRequest = client.post("http://192.168.0.104:4011/sound")
-                                      .header(header::ACCESS_CONTROL_ALLOW_ORIGIN,"*")
+                                      .insert_header((header::ACCESS_CONTROL_ALLOW_ORIGIN,"*"))
                                       //.header(header::CONTENT_TYPE, "multipart/form-data")
-                                      .header(header::CONTENT_TYPE, "application/octet-stream")
+                                      .insert_header((header::CONTENT_TYPE, "application/octet-stream"))
                                       //.header(header::CONTENT_DISPOSITION, "attachment; filename=\"test.txt\"")
-                                      .header(header::CONTENT_LENGTH, format!("{}",size_byte));
+                                      .insert_header((header::CONTENT_LENGTH, format!("{}",size_byte)));
 /*
     let body = stream::once( 
         async move {
