@@ -16,6 +16,8 @@
 
 ## Links
 
+[Actix book](https://github.com/Jekshmek/book-1)
+
 [Actix doc](https://actix.rs/)
 
 [Actix Examples](https://github.com/actix/actix-website/tree/master/examples/websockets) 
